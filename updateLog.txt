@@ -1,0 +1,82 @@
+v6.1.12-Ghost
+- 新增中英文项目首页：逐项说明仓库文件、WebUI 交互流程、配置参数、设备兼容边界与测试范围；扩充模块管理器简介，注明 POCO F6 Pro / POCO F3 实测范围及配置/上游鸣谢。
+- 修复触屏 WebView 对已选模式保留 :hover、覆盖模式主题色的问题；重复点击当前模式会重绘选择卡片，不切换档位。
+- KGSL idle_timer 写入后若仍读回写前原值，识别为内核忽略写入，在本次启动停止重复尝试、隐藏不可用调节控件；下次开机重新探测。文档说明骁龙870/POCO F3 公开 SM8250 驱动实现及需内核侧修复的边界。
+- 安装器和 WebUI 增加 I/O scheduler、iostats/nomerges、CPUIdle governor、Qualcomm DDR/LLCC devfreq 的设备级能力检测；不支持的开关隐藏并显示原因，安装阶段同步关闭对应配置；I/O 队列优化还要求 scheduler 全量可用。
+- I/O scheduler 默认仍采用全部块队列共同支持的兼容项；队列调优、CPUIdle 与总线节点按本机 sysfs 实际导出情况判断，不按 SoC 名称推断支持。
+- 明确能力检测只代表 sysfs 节点及权限条件满足，不等于运行时写入成功；文档补充 Linux blk-mq、CPUIdle ABI 与 devfreq 接口依据。
+- 安装输出改为分组框式摘要，合并 I/O 队列检测与 KGSL idle_timer 状态，压缩 CPU policy/OPP 校准信息，避免逐设备及重复说明造成刷屏。
+- WebUI 对未检测到共同支持 I/O scheduler 的设备隐藏选择控件，并保留不支持状态提示；仅展示本机队列共同支持项。
+- WebUI 实时检查 KGSL idle_timer；缺失或不可读时隐藏计时调节入口并明确提示不支持/不可用。模式切换脚本在节点不可读或不可写时不再尝试修改。
+- GPU 参数页保留最近一次模式切换的 KGSL 应用/读回结果；节点可读写但内核拒绝、量化或改写数值时，不再仅显示笼统的“支持”状态。
+- 文档明确区分 SoC 配置覆盖与实际设备节点支持：15 个已映射 Qualcomm 配置包含计时值，14 个 MediaTek 配置不包含；设备运行时 sysfs 检测才是实际支持依据。
+- I/O scheduler 保持每台设备一个全局兼容选择，不创建未经 A/B 验证的模式映射；说明不同 SoC/模式的优选项需基于实际存储队列和负载测量。
+- 安装时逐个检测每个 SoC 设备的块设备 I/O scheduler，只在所有检测到的队列共同支持范围内自动配置；WebUI 隐藏未检测到支持的选择项。
+- 极速档按本机各 CPU policy 的最高 OPP 自动校准并锁定调节入口，避免安装后再次手动调整。
+- 频率与数值滑条改为只读显示，点按后通过弹窗选择；删除设置页中的“调度原理与档位说明”页面及其渲染代码。
+- 修复已选模式重复点按时的交互状态，当前模式颜色保持稳定。
+- 安装日志新增 I/O 检测范围、共同支持项和自动选择策略说明。
+- 所有已映射 SoC 配置统一尝试安装期 OPP 校准，并按实际 policy 校验调速器可用性。
+- 移除设备配置回归检查入口和安装期重复诊断；OPP 校准、policy 校验仍由安装器执行。
+- 极速档安装时统一开放全部 CPU policy 的最高可用频点；前台应用 uclamp.min=100，不锁定 CPU 最低频率。
+- 安装输出改为分阶段详细说明：SoC 配置、policy/CPU 映射、OPP 范围、四档上限、最低频约束、调速器校验及生效时机；不再打印冗长的逐频点列表。
+- 模式切换分别报告配置写入、守护进程应用、运行态上限和 KGSL idle_timer 结果；不再静默覆盖 Scene 接口错误。
+- 明确拒绝 standby；开机时将遗留的未知模式恢复为 balance。
+- 移除全局按压灰色背景和局部按压色层，避免触控时界面变灰。
+- 底部导航取消按压缩放与变暗，保留 Material 3 当前选中指示器。
+- 统一按钮、卡片、分段选项、主题色点的交互状态；选中态不受影响。
+
+G_CTS v6.1.10-Ghost
+- 全局统一按压反馈：所有 .press 可交互控件按下时整项变为柔和灰色，覆盖卡片标题、设置行、按钮、主题选项、模式卡片和下拉选项。
+- 移除按压伪元素遮罩、局部灰块与按压缩放；背景直接作用于控件本身，文字和图标不再被遮挡。
+- 禁止触屏 WebView 将 :hover 状态残留到松手之后；松开立即恢复原主题。
+
+G_CTS v6.1.9-Ghost
+- 修复 Android WebView 触屏 :hover 残留导致的标题局部着色。
+- 移除所有 .press 控件的伪元素遮罩，避免文字被覆盖或出现局部色块。
+- 设置行与折叠卡片改为整项背景色按压反馈；触摸松开后恢复。
+- 桌面悬停效果仅在 hover + fine pointer 设备启用。
+
+v6.1.8-Ghost
+- 修复按压反馈只覆盖选项内部小区域的问题：设置行、折叠卡片标题、主题分段按钮和弹层选项统一覆盖整个可点击区域。
+- 按压反馈改为低透明度表面暗色，不再使用局部主色块，文字与图标保持清晰可读。
+- 移除可点击设置行之间多余的横向分隔线；静态信息行仍保留必要分隔。
+- 统一触控状态：未按压无残留色块，按下整项轻微变暗，松开立即恢复；不再缩放导致文字位置抖动。
+
+v6.1.7-Ghost
+- 恢复安装时完整 CPU 频率表：逐 policy 显示 CPU 归属、硬件频率范围、全部可用 OPP，以及四种模式的 min/max 配置。
+- WebUI 普通文本支持长按选择与复制；按钮、滑块等交互控件仍保持防误选。
+
+G_CTS v6.1.7-Ghost
+- 修复 Android WebView 按压灰色矩形：改用卡片内圆角 Material tonal 反馈，主题分段按钮同步修复。
+- 修复卡片/设置项按下时的文字高亮与遮挡问题。
+- 精简安装输出：删除冗长 SoC 拓扑、频率表和整份更新日志回显。
+- 新增 TUNING_RESEARCH.md，说明 Qualcomm/MediaTek 参数调校依据和设备级验证边界。
+- 保留 configVersion=17、守护进程二进制、MIUI 原生温控。
+
+G_CTS v6.1.5-Ghost
+- 修复配置 schema 版本不匹配：全部 SoC INI 恢复为守护进程要求的 configVersion=17。
+- 调校页升频间隔、降频间隔改为纵向单列。
+- 优化频率上限/下限、uclamp、GPU/CPU 协同卡片的触控反馈与文本选择行为。
+- 不更换 MW_CpuSpeedController 二进制；不增加 FEAS；不接管 MIUI 温控。
+
+G_CTS v6.1.4-Ghost
+- 修复 30 个 SoC 配置中的 EasSchedulerVaule 拼写，统一为二进制识别的 EasSchedulerValue，并同步修复 WebUI 参数编辑段名。
+- 修复下拉选项按压时整行灰色长方形：改为 KoWSU 风格的 Material 3 圆角 tonal option、选中容器和柔和缩放反馈。
+- 每个实际 CPU policy 的四档配置补齐缺失的 CoreMinFreq=0（0 表示不强制最低频率）；8Gen3 补齐 SuperBigCoreMinFreq。
+- 单核最高性能簇在 WebUI 显示为“超大核”，因此 Redmi K40 的 BigCore policy7 也能以“超大核”名称调整下限/上限。
+- 为高通配置增加每模式 GpuIdleTimerMs；powercfg.sh 按 CPU 模式同步 KGSL idle_timer，并在省电档/卸载时恢复原始值。
+- 展示现有 up_rate_limit_us / down_rate_limit_us 为可调滑块；其他 governor 参数按原始语义显示。
+- 为具备 Bus_dcvs 配置的 SoC 展示 LLCC/DDR devfreq 参数；保留 I/O scheduler 与队列优化选项。
+- 删除 WebUI/INI 中 FEAS 开关与配置项；未修改预编译守护进程二进制。
+- 安装说明改为与 get_config_name() 实际映射一致，区分“配置映射支持”和“安装期 OPP 校准”。
+- 不新增温控接管、温控服务停止或温控节点写入；保留 MIUI 原生温控。
+
+v6.0.16-Ghost
+1. 8 Gen2 性能档：uclamp.min 35，前台 uclamp.max 80，超大核下限 1.555 GHz，降频间隔 12 ms
+2. 8 Gen2 极速档：超大核下限 2.093 GHz，降频间隔 20 ms（上限与 uclamp 仍拉满）
+3. 修正调度段名 EasSchedulerVaule → EasSchedulerValue，唤醒粒度 3.2 ms → 1.5 ms（原先拼写错误，守护进程读不到）
+4. powercfg 在切模式时写 kgsl idle_timer（守护进程没有这个键）：均衡 150 / 性能 300 / 极速 800 ms
+
+v6.0.15-Ghost
+1. 8 Gen2 均衡档：uclamp.min 25、latency_sensitive、降频 10 ms、超大核下限 1.248 GHz

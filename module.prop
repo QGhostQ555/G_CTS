@@ -1,0 +1,6 @@
+id=MW_CpuTurboScheduler
+name=G_CTS
+version=v6.1.12-Ghost
+versionCode=20261053
+author=Ghost（基于 MoWei 二改）
+description=Android 8-16 四档 CPU 调度与 WebUI；按设备校准 OPP 上限，可配置 uclamp/cpuset/I/O/CPUIdle。极速档不锁最低频、不关闭厂商温控；不保证所有设备省电。

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>G_CTS</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="appbar" id="appbar">
+    <div class="grow"><h1>G_CTS</h1><div class="sub" id="subtitle">正在连接…</div></div>
+    <span class="chip static" id="conn"><i></i><span>连接中</span></span>
+  </header>
+  <main id="main">
+    <section class="page" id="page-home"></section>
+    <section class="page" id="page-tune" hidden></section>
+    <section class="page" id="page-log" hidden></section>
+    <section class="page" id="page-set" hidden></section>
+  </main>
+  <div id="dirty"></div>
+  <nav class="navbar" id="nav" role="tablist"></nav>
+  <div id="layer"></div>
+</div>
+<script src="soc-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -31,7 +31,7 @@ G_CTS 是面向 Android root 环境的 CPU 调度模块，基于 [MoWei 公开�
 2. 安装器通过设备属性和硬件信息选择 `conf/*.ini` 配置。
 3. 安装器检查真实 CPUFreq policy、CPU 核心映射、OPP 和 governor；频率目标会按设备频点校准。
 4. 安装器探测块设备队列、CPUIdle、配置中引用的 devfreq 节点，以及 KGSL idle timer 等接口；不具备应用条件的设置会被关闭或标记为不可用。
-5. 重启后 `service.sh` 等待 Android 用户存储可用，部署 Scene 接口，按当前模式同步可选 GPU timer，再启动预编译守护进程。
+5. 重启后 `service.sh` 等待 Android 用户存储可用，部署 Scene 接口，按当前模式同步可选 GPU timer，再启动并持续看护预编译守护进程；异常退出时回退到 balance 并按退避间隔自动重试。
 6. 用户从 WebUI 或 Scene 选择四档之一；守护进程读取配置并应用其支持的 CPU/系统参数。
 
 请在更新前备份现有配置。不要同时运行多个会改写相同 CPUFreq、cpuset、I/O 或 GPU 节点的调度工具，除非明确了解冲突关系。
@@ -60,7 +60,7 @@ G_CTS 是面向 Android root 环境的 CPU 调度模块，基于 [MoWei 公开�
 
 - 频率/数值条用于显示当前值；点击后通过弹出选项选择，不需要拖动滑条。
 - 编辑后出现未保存提示和“保存并应用”操作；也可放弃更改。
-- 保存会写入 `config.ini`，保留上次版本为 `config.ini.last`，然后重启守护进程让其重新读取配置。
+- 保存会写入 `config.ini`，保留上次版本为 `config.ini.last`，然后通过 `restart.sh` 请求开机服务重启守护进程，并确认新进程已运行。
 - 保存前按当前设备能力校验 I/O、队列优化、CPUIdle、DDR/LLCC；不支持的值不会允许通过 UI 保存。
 - 不在 KernelSU 环境运行时，`demo.js` 提供桌面演示数据。**演示模式不会连接手机、不会写入配置，也不能证明真机能力。**
 
@@ -154,7 +154,7 @@ CPU 的动态功耗受电压、频率、活动因子、芯片漏电和任务耗�
 | `README.zh-CN.md` | 本文：中文功能、交互、参数、文件和适配说明。 |
 | `module.prop` | root 模块 ID、名称、版本、作者及管理器显示简介。 |
 | `customize.sh` | 安装主流程：SoC 配置匹配、拷贝、I/O/CPUIdle/devfreq 能力探测、policy 校验和 OPP 校准。 |
-| `service.sh` | 开机后部署 Scene 入口、同步模式与 GPU 状态并启动守护进程。 |
+| `service.sh` | 开机后部署 Scene 入口、同步模式与 GPU 状态；持续看护守护进程，意外退出时回退到 balance 并退避重试。 |
 | `uninstall.sh` | 停止守护进程、请求恢复已保存的 KGSL 原值并清除模块部署文件。 |
 | `MW_CpuSpeedController` | 预编译 native 调度守护进程；它负责消费配置并处理运行期调度参数。 |
 | `SUPPORTED_SOC.md` | 配置族覆盖、policy/OPP 校准与 sysfs 能力检测说明。 |
@@ -176,7 +176,7 @@ CPU 的动态功耗受电压、频率、活动因子、芯片漏电和任务耗�
 | `vtools/gen_json.sh` | 从 `module.prop` 生成 Scene 使用的 `powercfg.json`。 |
 | `vtools/init_vtools.sh` | 安装时把 Scene JSON 与 `powercfg.sh` 部署到 `/data`，初始化共享模式文件。 |
 | `vtools/desc.sh` | 更新 root 管理器展示的设备、档位和守护进程状态。 |
-| `vtools/restart.sh` | 使用安装路径重启守护进程。 |
+| `vtools/restart.sh` | 通过开机服务请求重启并确认新进程；服务未运行时提供 detached 启动回退。 |
 | `vtools/ab_sample.sh` | 只读采集电量、温度、CPU policy 和可用降频计数；不切模式、不写节点。 |
 
 ### `webroot/`

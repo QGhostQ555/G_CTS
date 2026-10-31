@@ -30,6 +30,6 @@ window.__demoApi = {
   async backup() { const n = 'config.ini.bak.20261029-120000'; baks.unshift(n); return n; },
   async backups() { return ['config.ini.last', ...baks]; },
   async restore() { await wait(200); return true; }, async restoreDefault() { ini = INI0; return true; },
-  async restart() { await wait(500); running = true; return true; },
+  async restart() { await wait(500); running = true; return { running: true, error: '' }; },
 };
 })();

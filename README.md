@@ -1,8 +1,39 @@
 # G_CTS
 
-> 中文用户请先阅读 [简体中文项目说明](./README.zh-CN.md)，其中包含逐文件说明、WebUI 交互流程、配置参数、实测设备及上游致谢。
+[简体中文](#简体中文) · [English](#english) · [完整中文说明](./README.zh-CN.md)
 
-G_CTS is an Android CPU scheduling module derived from [MoWei CpuTurboScheduler](https://github.com/MoWei-2077/MW_CpuTurboScheduler), rewritten and extended by Ghost. It installs through Magisk-compatible module installers and provides a WebUI plus a Scene-compatible mode interface.
+## 简体中文
+
+G_CTS 是面向 Android Root 模块管理器的 CPU 调度模块，基于 MoWei CpuTurboScheduler 二次开发，提供四档调度、设备级 OPP 校准、WebUI、Scene 模式接口和守护进程异常恢复。
+
+> **重要：**不同设备的内核、温控、负载和厂商策略会影响效果。本模块不关闭厂商温控、不锁定 CPU 最低频率，也不保证所有设备都能省电或提升性能。
+
+### 功能概览
+
+- 四种模式：省电、均衡、性能、极速。极速档按本机检测到的最高频点开放上限，不强制 CPU 持续满频。
+- 安装时检测 CPUFreq policy、CPU 核心映射、OPP 和 governor，并按设备能力校准配置。
+- WebUI 显示实时频率、模式上限、电池/温度信息，并提供参数编辑、日志、备份和恢复。
+- I/O、CPUIdle、cpuset、Qualcomm DDR/LLCC 等选项依据设备实际接口决定是否可用。
+- 开机服务持续看护调度守护进程；异常退出时回退到均衡档，并进行退避重试。
+
+### 下载与安装
+
+从 [Releases](https://github.com/QGhostQ555/G_CTS/releases) 下载 `G_CTS-v6.1.13-Ghost.zip`，使用 Magisk、KernelSU 或 APatch 等兼容的 Root 模块管理器刷入，并按安装提示重启。该 ZIP 是 Root 模块包，不是 APK。
+
+### 实测设备
+
+- POCO F6 Pro（Snapdragon 8 Gen 2）
+- POCO F3（Snapdragon 870）
+
+“实测”表示模块曾在设备上运行，不代表所有模式、参数和长时间续航均完成标准化 A/B 测试。详细文件说明、WebUI 交互、参数表、SoC 配置及兼容边界见[完整中文说明](./README.zh-CN.md)。
+
+### 致谢
+
+感谢小疣然分享 SoC 配置参考；项目基于 [MoWei CpuTurboScheduler](https://github.com/MoWei-2077/MW_CpuTurboScheduler) 二次开发。
+
+## English
+
+G_CTS is an Android CPU scheduling root module derived from [MoWei CpuTurboScheduler](https://github.com/MoWei-2077/MW_CpuTurboScheduler), rewritten and extended by Ghost. It installs through Magisk-compatible module installers and provides a WebUI plus a Scene-compatible mode interface.
 
 > The module does not guarantee longer battery life or higher performance on every device. SoC profiles are starting points, not per-device benchmark claims. OEM kernels, thermal policy, workload, and other system services affect the result. The module does not disable vendor thermal protection or lock CPU minimum frequencies.
 
@@ -91,9 +122,9 @@ The filename indicates the installer's selected profile, not a guarantee that ev
 |---|---|
 | `module.prop` | Root-module identity, version, author, and manager-visible summary. |
 | `customize.sh` | Installer: selects a SoC profile, copies/calibrates configuration, checks policies and device capabilities, reports results, and prepares module state. |
-| `service.sh` | Post-boot service: waits for user storage, deploys the Scene interface, synchronizes the mode/GPU setting, and starts the scheduler daemon. |
+| `service.sh` | Post-boot service: deploys the Scene interface, synchronizes mode/GPU settings, and supervises the daemon with balance fallback and bounded retry backoff. |
 | `uninstall.sh` | Stops the daemon, attempts to restore the saved KGSL idle timer, and removes module state and deployed Scene files. |
-| `MW_CpuSpeedController` | Prebuilt native scheduler daemon. This repository snapshot does not contain its corresponding source tree; see **License and source availability** before redistribution. |
+| `MW_CpuSpeedController` | Prebuilt native scheduler daemon. A pinned upstream source snapshot is included under `third_party/`; the exact build provenance of this binary should still be confirmed. |
 | `SUPPORTED_SOC.md` | Profile mapping, calibration behavior, capability-detection rules, and kernel-interface caveats. |
 | `TUNING_RESEARCH.md` | Controlled device A/B procedure, sampling guidance, and interpretation boundaries. |
 | `调度说明.md` | Chinese technical guide to modes, profile assumptions, and known device/kernel limitations. |
@@ -111,7 +142,7 @@ The 31 `*.ini` files listed in **Device profiles** define the defaults for each 
 | `gen_json.sh` | Generates Scene's `powercfg.json` metadata from `module.prop`. |
 | `init_vtools.sh` | Deploys the Scene JSON and `powercfg.sh` into `/data` and initializes the shared mode state. |
 | `desc.sh` | Updates the root-manager module description with device, active mode, and daemon state. |
-| `restart.sh` | Restarts the scheduler daemon using the module's installed runtime paths. |
+| `restart.sh` | Requests a supervised daemon restart and verifies the new process; provides a detached fallback when the service supervisor is unavailable. |
 | `ab_sample.sh` | Read-only A/B sampler for battery, temperature, policy, and available throttling counters; it does not change modes or settings. |
 
 ### `webroot/`

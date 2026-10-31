@@ -407,6 +407,11 @@ button:focus:not(:focus-visible){outline:none}
 @media (hover:none),(pointer:coarse){
   .press:hover:not(:active){background-color:inherit!important;filter:none!important}
 }
+.core.on:hover:not(:active){
+  background-color:var(--primary)!important;
+  color:var(--on-primary)!important;
+  border-color:transparent!important;
+}
 .mode-card[aria-checked=true]:hover:not(:active){
   background:var(--m-container)!important;
   color:var(--m-on)!important;

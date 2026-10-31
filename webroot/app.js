@@ -225,16 +225,9 @@ echo "D|$(pidof MW_CpuSpeedController)"`, 8000);
   async restore(name) { if (!/^config\.ini\.(bak\.[0-9-]+|last)$/.test(name)) return false; return (await sh(`cp -f ${SD}/${name} ${SD}/config.ini`)).errno === 0; },
   async restoreDefault() { return (await sh(`cp -f ${MOD}/config.default.ini ${SD}/config.ini`)).errno === 0; },
   async restart() {
-    const r = await sh(`MOD=${MOD}
-cp -f "$MOD/vtools/powercfg.sh" /data/powercfg.sh 2>/dev/null
-chmod 0755 /data/powercfg.sh "$MOD/MW_CpuSpeedController" "$MOD/vtools/"*.sh 2>/dev/null
-# 结束旧进程
-pkill -x MW_CpuSpeedController 2>/dev/null || kill $(pidof MW_CpuSpeedController) 2>/dev/null
-sleep 0.4
-"$MOD/MW_CpuSpeedController" >/dev/null 2>&1 &
-sleep 0.8
-pidof MW_CpuSpeedController`, 15000);
-    return !!(r.stdout || '').trim();
+    const r = await sh(`sh ${MOD}/vtools/restart.sh`, 20000);
+    const running = r.errno === 0 && (r.stdout || '').trim().split('\n').includes('running');
+    return { running, error: running ? '' : (r.stderr || r.stdout || `restart.sh exit ${r.errno}`) };
   },
 };
 
@@ -788,11 +781,13 @@ async function save() {
     const ok = await api.writeConfig(text);
     if (!ok) { toast('保存失败：无法写入 config.ini'); return; }
     S.ini.commit(); S.iniText = text;
-    let run = false;
-    try { run = await api.restart(); } catch (e) { run = false; }
-    S.running = run;
+    let restartResult;
+    try { restartResult = await api.restart(); }
+    catch (e) { restartResult = { running: false, error: String(e) }; }
+    S.running = restartResult.running;
     paintConn(); renderDirty(); rerenderAll();
-    toast(run ? '已保存并应用' : '已保存（守护进程未确认启动，可点「重启调度守护进程」）');
+    toast(restartResult.running ? '已保存并应用' :
+      `已保存，但守护进程重启失败${restartResult.error ? `：${restartResult.error}` : ''}`);
     setTimeout(pollLive, 600);
     setTimeout(pollLive, 1500);
   } catch (e) {
@@ -898,7 +893,13 @@ async function doAct(a, el) {
     case 'save': return save();
     case 'discard': return discard();
     case 'reload': return boot();
-    case 'restart': { toast('正在重启守护进程…'); S.running = await api.restart(); paintConn(); rerenderAll(); return toast(S.running ? '守护进程已启动' : '启动失败'); }
+    case 'restart': {
+      toast('正在重启守护进程…');
+      const result = await api.restart();
+      S.running = result.running; paintConn(); rerenderAll();
+      return toast(result.running ? '守护进程已启动' :
+        `重启失败${result.error ? `：${result.error}` : ''}`);
+    }
     case 'refreshlog': return loadLog(true);
     case 'copylog': { const t = (S.logs || []).map(x => `${x.t} ${x.lv} ${x.m}`).join('\n'); try { await navigator.clipboard.writeText(t); } catch { const ta = document.createElement('textarea'); ta.value = t; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); } return toast('已复制日志'); }
     case 'clearlog': if (await confirmD('清空日志？', '将清空 log.txt，此操作无法撤销。', '清空', true)) { await api.clearLog(); S.logs = []; renderLog(); toast('日志已清空'); } return;
@@ -906,10 +907,26 @@ async function doAct(a, el) {
     case 'restore': {
       const l = await api.backups(); if (!l.length) return toast('没有可用的备份');
       const v = await dialog({ title: '从备份恢复', body: l.slice(0, 6).map(n => `<button class="opt press" data-pick="${esc(n)}">${ic('history')}<span>${n === 'config.ini.last' ? '上次保存前的版本' : esc(n.replace('config.ini.bak.', ''))}</span></button>`).join(''), acts: [{ t: '取消', v: null }] });
-      if (v && await api.restore(v)) { await loadConfig(); S.running = await api.restart(); rerenderAll(); toast('已恢复并应用'); } else if (v) toast('恢复失败'); return;
+      if (v && await api.restore(v)) {
+        await loadConfig();
+        const result = await api.restart();
+        S.running = result.running; rerenderAll();
+        toast(result.running ? '已恢复并应用' :
+          `配置已恢复，但守护进程重启失败${result.error ? `：${result.error}` : ''}`);
+      } else if (v) toast('恢复失败');
+      return;
     }
     case 'restoreDefault': if (await confirmD('恢复出厂配置？', '将用模块为本机生成的默认档位覆盖当前配置（当前配置会保存为“上次保存前的版本”）。', '恢复', true)) {
-      await api.backup(); if (await api.restoreDefault()) { await loadConfig(); S.running = await api.restart(); rerenderAll(); applyTheme(); toast('已恢复出厂配置'); } else toast('恢复失败'); } return;
+      await api.backup();
+      if (await api.restoreDefault()) {
+        await loadConfig();
+        const result = await api.restart();
+        S.running = result.running; rerenderAll(); applyTheme();
+        toast(result.running ? '已恢复出厂配置并应用' :
+          `配置已恢复，但守护进程重启失败${result.error ? `：${result.error}` : ''}`);
+      } else toast('恢复失败');
+    }
+    return;
   }
 }
 document.addEventListener('click', e => {

@@ -18,8 +18,22 @@ wait_until_login() {
 }
 wait_until_login
 mkdir -p "$SD"
+SUPERVISOR_PID="$$"
+printf '%s\n' "$SUPERVISOR_PID" > "$SD/service.pid"
+DPID=
+cleanup_service() {
+  if [ -n "$DPID" ]; then
+    kill "$DPID" 2>/dev/null
+    wait "$DPID" 2>/dev/null
+    [ "$(cat "$SD/daemon.pid" 2>/dev/null)" = "$DPID" ] && rm -f "$SD/daemon.pid"
+  fi
+  [ "$(cat "$SD/service.pid" 2>/dev/null)" = "$SUPERVISOR_PID" ] && rm -f "$SD/service.pid"
+}
+trap cleanup_service 0
+trap 'exit 0' HUP INT TERM
 # The result is kernel/boot specific; probe again once after each reboot.
 rm -f "$SD/gpu_idle_timer.unsupported"
+rm -f "$SD/daemon.restart"
 chmod 0755 "$MODDIR"/vtools/*.sh "$MODDIR/MW_CpuSpeedController"
 if ! cp -f "$MODDIR/vtools/powercfg.sh" /data/powercfg.sh; then
   log_service "无法部署 /data/powercfg.sh；停止启动以避免使用过期模式接口"
@@ -48,32 +62,66 @@ case "$current_mode" in
     ;;
 esac
 
-"$MODDIR/MW_CpuSpeedController" &
-DPID=$!
-sleep 3
-if ! kill -0 "$DPID" 2>/dev/null; then
-  wait "$DPID"
-  first_status=$?
-  log_service "调度守护进程启动失败（exit $first_status）；切换到 balance 并仅重试一次"
-  sh /data/powercfg.sh balance >> "$SERVICE_LOG" 2>&1 ||
-    log_service "启动失败后的 balance/GPU 恢复失败"
-  if [ "$(cat "$SD/config.txt" 2>/dev/null)" != "balance" ]; then
-    log_service "模式文件未能恢复为 balance；不重试启动守护进程"
-    sh "$MODDIR/vtools/desc.sh"
-    exit 1
+restart_delay=2
+while :; do
+  if [ "$(cat "$SD/daemon.restart" 2>/dev/null)" = "restart" ]; then
+    rm -f "$SD/daemon.restart"
+    restart_delay=2
+    log_service "收到 WebUI 重启请求，立即启动守护进程"
   fi
+
   "$MODDIR/MW_CpuSpeedController" &
   DPID=$!
+  printf '%s\n' "$DPID" > "$SD/daemon.pid"
   sleep 3
-  if ! kill -0 "$DPID" 2>/dev/null; then
-    wait "$DPID"
-    retry_status=$?
-    log_service "balance 下重试启动仍失败（exit $retry_status）；未继续循环重启"
+
+  if kill -0 "$DPID" 2>/dev/null; then
+    log_service "调度守护进程运行中（PID $DPID）"
     sh "$MODDIR/vtools/desc.sh"
-    exit "$retry_status"
+    if [ "$(cat "$SD/daemon.restart" 2>/dev/null)" = "restart" ]; then
+      rm -f "$SD/daemon.restart"
+      kill "$DPID" 2>/dev/null
+    fi
+    wait "$DPID"
+    daemon_status=$?
+  else
+    wait "$DPID"
+    daemon_status=$?
+    log_service "调度守护进程启动失败（exit $daemon_status）"
   fi
-  log_service "守护进程在 balance 下重试启动成功"
-fi
-sh "$MODDIR/vtools/desc.sh"
-wait $DPID
-sh "$MODDIR/vtools/desc.sh"
+
+  [ "$(cat "$SD/daemon.pid" 2>/dev/null)" = "$DPID" ] && rm -f "$SD/daemon.pid"
+  restart_request=$(cat "$SD/daemon.restart" 2>/dev/null)
+  if [ "$restart_request" = "$DPID" ] || [ "$restart_request" = "restart" ]; then
+    rm -f "$SD/daemon.restart"
+    log_service "收到 WebUI 重启请求，重新启动守护进程"
+    restart_delay=2
+    continue
+  fi
+
+  log_service "守护进程意外退出（exit $daemon_status）；切换到 balance 后自动重试"
+  sh /data/powercfg.sh balance >> "$SERVICE_LOG" 2>&1 ||
+    log_service "异常退出后的 balance/GPU 恢复失败"
+  if [ "$(cat "$SD/config.txt" 2>/dev/null)" != "balance" ]; then
+    log_service "模式文件未能恢复为 balance；等待后重试恢复"
+  fi
+  sh "$MODDIR/vtools/desc.sh"
+  log_service "${restart_delay} 秒后重试守护进程"
+  waited=0
+  expedite_restart=0
+  while [ "$waited" -lt "$restart_delay" ]; do
+    if [ "$(cat "$SD/daemon.restart" 2>/dev/null)" = "restart" ]; then
+      rm -f "$SD/daemon.restart"
+      expedite_restart=1
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if [ "$expedite_restart" -eq 1 ]; then
+    restart_delay=2
+    continue
+  fi
+  [ "$restart_delay" -lt 60 ] && restart_delay=$((restart_delay * 2))
+  [ "$restart_delay" -gt 60 ] && restart_delay=60
+done

@@ -20,6 +20,8 @@
 - 每次安装都会逐个检查块设备队列的 scheduler、`iostats` 和 `nomerges`。仅当所有队列都有可读写 scheduler 且存在共同选项时，才显示/启用 I/O scheduler 开关；兼容默认优先 `mq-deadline`，再回退 `kyber`、`bfq`、`none`。I/O 队列优化还要求所有队列的 `iostats` / `nomerges` 节点均可读写，并依赖 I/O scheduler 检测通过；能力不满足时安装器关闭对应配置，WebUI 隐藏开关并显示原因。节点存在/权限可写是应用前提，不是内核实际接受写入的证明。
 - CPUIdle 自定义开关只在 `available_governors` 非空、`current_governor` 可写且配置值在可用列表中时显示；否则安装器关闭配置，WebUI 隐藏开关并报告不可用。
 - Qualcomm DDR/LLCC 联动只在配置引用的四个 devfreq `min_freq` / `max_freq` 节点都存在且可读写时开放；缺项时安装器关闭配置、WebUI 隐藏开关及频率编辑器。Linux devfreq 是通用框架，但具体设备是否注册相应设备/路径取决于 OEM 内核，因此不能仅凭 SoC 型号宣称支持。
+- KGSL GPU 频率范围使用 `/sys/class/kgsl/kgsl-3d0/devfreq/{available_frequencies,min_freq,max_freq}`。WebUI 仅在本机提供有效 OPP 列表且上下限可读写时开放每模式上下限；值以 Hz 保存并要求精确匹配设备 OPP。设为 `0/0` 会尝试恢复首次接管前的范围，卸载时也会尝试恢复。设备缺少接口时保持驱动默认值；该项不适用于没有此 KGSL 节点的 GPU。
+- KGSL 频率限制与 `DisableQcomGpu` 的 GPU Boost 参数控制冲突；WebUI 会拒绝同时保存非自动频率与该开关。OEM 热管理仍可进一步限频，模块不绕过温控。
 - WebUI 的频率与数值条仅用于显示；点按后在弹窗中选择。极速档频率上限自动校准并锁定为本机最高可用频点，不需要再次手动调整。
 - 某 SoC 存在配置文件不代表已经完成该机型实测；OEM 内核可能合并/拆分 cpufreq policy，安装器会校验本机 policy。
 - 正式模式只有 `powersave`、`balance`、`performance`、`fast`。`standby` 不受支持，调用会失败且保持现有模式和 GPU 状态不变；开机时遗留的未知档位会回到 `balance`。

@@ -17,19 +17,25 @@ const seedLog = () => { const t = n => new Date(Date.now() - n * 1000).toISOStri
 seedLog();
 window.__demoApi = {
   async info() { await wait(250); return ['PROP|POCO F6 Pro|23113RKC6C|SM8550|kalama|15|5.15.153-android13-8',
-    'MOD|v6.0-Ghost|SDM8G2', ...Object.keys(OPP).map(p => `POL|${p}|${CPUS[p]}|${OPP[p].split(' ').pop()}|${OPP[p]}|walt schedutil performance powersave`),
+    'MOD|v6.1.24-Ghost|SDM8G2', ...Object.keys(OPP).map(p => `POL|${p}|${CPUS[p]}|${OPP[p].split(' ').pop()}|${OPP[p]}|walt schedutil performance powersave`),
     'IOS|none mq-deadline [kyber] bfq', 'IOCAP|4|1|1|4',
-    'IDLE|ladder menu qcom-cpu-lpm|qcom-cpu-lpm|1', 'BUS|0|0', 'GPU|supported'].join('\n'); },
+    'IDLE|ladder menu qcom-cpu-lpm|qcom-cpu-lpm|1', 'BUS|0|0', 'GPU|supported',
+    'GPUF|supported|315000000|180000000|900000000|180000000 257000000 315000000 400000000 500000000 600000000 700000000 800000000 900000000'].join('\n'); },
   async live() { await wait(60); const s = (Date.now() - t0) / 1000;
     const rows = Object.keys(OPP).map((p, i) => { const top = +OPP[p].split(' ').pop(), mx = cap(+p) || top; const w = 0.35 + 0.3 * Math.sin(s / (1.3 + i * .4) + i); return `L|${p}|${Math.round(Math.min(mx, top * Math.max(.18, w)) / 100) * 100}|${mx}|walt`; });
     return [...rows, 'M|' + mode, 'B|78|361|Discharging', 'D|' + (running ? '4242' : '')].join('\n'); },
-  async readConfig() { await wait(150); return ini; },
+  async readConfig() {
+    await wait(150);
+    if (!ini.includes('GpuMinFreq')) ini = ini.replace(/\[(powersave|balance|performance|fast)\]\r\n/g, '$&GpuMinFreq = 0\r\nGpuMaxFreq = 0\r\n');
+    return ini;
+  },
   async writeConfig(t) { await wait(300); ini = t; return true; },
-  async setMode(m) { await wait(200); mode = m; log += `\n[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] INFO: 模式切换 → ${m}`; return { requested: true, gpu: 'simulated|演示模式' }; },
+  async setMode(m) { await wait(200); mode = m; log += `\n[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] INFO: 模式切换 → ${m}`; return { requested: true, gpu: 'simulated|演示模式', gpuFreq: 'simulated|演示模式未修改真实 GPU 参数' }; },
+  async applyGpu() { await wait(120); return { result: 'simulated|演示模式未修改真实 GPU 参数', error: '' }; },
   async readLog() { return log; }, async clearLog() { log = ''; return true; },
   async backup() { const n = 'config.ini.bak.20261029-120000'; baks.unshift(n); return n; },
   async backups() { return ['config.ini.last', ...baks]; },
   async restore() { await wait(200); return true; }, async restoreDefault() { ini = INI0; return true; },
-  async restart() { await wait(500); running = true; return { running: true, error: '' }; },
+  async restart() { await wait(500); running = true; return { running: true, error: '' }; }
 };
 })();

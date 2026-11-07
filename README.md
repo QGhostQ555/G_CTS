@@ -18,7 +18,7 @@ G_CTS 是面向 Android Root 模块管理器的 CPU 调度模块，基于 MoWei 
 
 ### 下载与安装
 
-从 [Releases](https://github.com/QGhostQ555/G_CTS/releases) 下载 `G_CTS-v6.1.13-Ghost.zip`，使用 Magisk、KernelSU 或 APatch 等兼容的 Root 模块管理器刷入，并按安装提示重启。该 ZIP 是 Root 模块包，不是 APK。
+从 [Releases](https://github.com/QGhostQ555/G_CTS/releases) 下载最新的 G_CTS 安装包，使用 Magisk、KernelSU 或 APatch 等兼容的 Root 模块管理器刷入，并按安装提示重启。该 ZIP 是 Root 模块包，不是 APK。
 
 ### 实测设备
 
@@ -43,6 +43,7 @@ G_CTS is an Android CPU scheduling root module derived from [MoWei CpuTurboSched
 - Detects the device's CPUFreq policies and available operating points (OPPs); install-time calibration snaps profile frequency caps to device-supported values.
 - `fast` uses each detected policy's highest readable frequency as its maximum cap and sets the foreground app `uclamp.min` to 100. It does not force the CPU to stay at maximum frequency.
 - WebUI displays device, profile, CPU policy, current frequency, configured cap, battery and temperature readings where available.
+- The Tuning page can set per-mode KGSL GPU minimum and maximum frequencies when writable devfreq bounds and a device OPP list are exposed.
 - WebUI can edit profile parameters, cpusets, I/O settings, CPUIdle governor, and other settings when device capability checks pass.
 - Mode changes can be made from the WebUI or the deployed Scene interface at `/data/powercfg.sh`.
 - Capability checks are based on the device's live sysfs nodes and permissions. A writable node does not prove that the kernel or driver accepts a requested value.
@@ -63,11 +64,11 @@ The project ZIP is a root-module package, not an ordinary Android application AP
 - **Scheduling**: shows device identity, current mode, mode cards, live policy frequencies, battery and temperature values where readable.
 - **Tuning**: has **Mode parameters** and **Global features** tabs.
 - **Logs**: displays the daemon log and exposes the available log actions.
-- **Settings**: contains module configuration, backup/restore, daemon restart, and appearance preferences.
+- **Settings**: contains appearance, configuration backup/restore, and daemon restart.
 
 ### Mode cards
 
-- Selecting a different mode writes the request through `/data/powercfg.sh`, which updates the mode state file and applies the configured KGSL idle timer when the kernel supports it.
+- Selecting a different mode writes the request through `/data/powercfg.sh`, which updates the mode state file and applies configured KGSL idle-timer and GPU frequency bounds when supported.
 - The UI then polls the daemon and CPUFreq policy limits to report the actual mode and limit-check result. A successful mode-file write does not by itself prove every parameter was applied.
 - Tapping the already-selected mode does not request another transition; it only re-renders the selected state.
 - The selected card keeps its mode color after touch/hover. The **Undo** action in the result notification requests the previous mode.
@@ -90,7 +91,7 @@ The installed active configuration is `/sdcard/Android/MW_CpuSpeedController/con
 | `[meta]` | Profile name, author, schema version, and daemon log level. Keep `configVersion` compatible with the bundled daemon. |
 | `[function]` | Feature switches such as `EasScheduler`, `cpuset`, `LoadBalancing`, `AdjIOScheduler`, `LaunchBoost`, `AffintySetter`, `DisableQcomGpu`, and `CpuIdleScaling_Governor`. A switch only applies if its implementation and device interfaces are available. |
 | `[CoreFramework]` | Maps logical clusters (`Small`, `Medium`, `Big`, `SuperBig`) to kernel CPUFreq policy IDs through `*CorePath`. The installer removes mappings for policies absent on the device. |
-| `[powersave]`, `[balance]`, `[performance]`, `[fast]` | Per-mode governor, maximum/minimum CPU frequencies, uclamp bounds, rate limits, UFS/network toggles, and optional GPU idle timer. |
+| `[powersave]`, `[balance]`, `[performance]`, `[fast]` | Per-mode governor, maximum/minimum CPU and GPU frequencies, uclamp bounds, rate limits, UFS/network toggles, and optional GPU idle timer. |
 | `*CoreMaxFreq` | Maximum allowed frequency for a mapped policy, in kHz. Profile values are snapped down to a supported OPP when the OPP list is available. `fast` is calibrated to the highest readable frequency. |
 | `*CoreMinFreq` | Minimum frequency in kHz. `0` means do not impose a minimum. This module's default profiles leave minimum frequencies unlocked. |
 | `UclampTopApp*`, `UclampForeGround*`, `UclampBackGround*` | Per-mode utilization clamp minimum/maximum values, in the configuration's 0–100 scale. `UclampTopApplatency_sensitive` controls the foreground latency-sensitive flag where supported. |
@@ -103,8 +104,9 @@ The installed active configuration is `/sdcard/Android/MW_CpuSpeedController/con
 | `[LaunchBoost]` | App-launch boost duration (`BoostRateMs`), frequency multiplier (`FreqMulti`), and foreground uclamp minimum (`UclampTopAppBoostMin`). |
 | `ufsClkGate`, `NetWorkOpt` | Per-mode UFS clock-gating and network optimization flags interpreted by the daemon when supported. |
 | `GpuIdleTimerMs` | Optional KGSL idle timer request in milliseconds. `0` requests restoration of the value captured before the module first took control. Actual behavior is kernel-specific and verified by reading the node back. |
+| `GpuMinFreq` / `GpuMaxFreq` | Per-mode KGSL devfreq lower/upper limits in Hz. Values must match the device's `available_frequencies` OPP list. `0` preserves the corresponding original bound; setting both to `0` restores and releases control. The module verifies sysfs readback and attempts to restore the original pair on uninstall. |
 
-Do not copy a profile's bus paths or governor parameters to another device without checking its sysfs interfaces. Sysfs availability and permission checks are preconditions, not proof of runtime acceptance. If a value is rejected or left unchanged, trust the reported readback rather than the requested setting.
+Do not copy a profile's bus paths or governor parameters to another device without checking its sysfs interfaces. Sysfs availability and permission checks are preconditions, not proof of runtime acceptance. If a value is rejected or left unchanged, trust the reported readback rather than the requested setting. Do not enable `DisableQcomGpu` together with GPU frequency limits.
 
 ## Device profiles
 
@@ -123,7 +125,7 @@ The filename indicates the installer's selected profile, not a guarantee that ev
 | `module.prop` | Root-module identity, version, author, and manager-visible summary. |
 | `customize.sh` | Installer: selects a SoC profile, copies/calibrates configuration, checks policies and device capabilities, reports results, and prepares module state. |
 | `service.sh` | Post-boot service: deploys the Scene interface, synchronizes mode/GPU settings, and supervises the daemon with balance fallback and bounded retry backoff. |
-| `uninstall.sh` | Stops the daemon, attempts to restore the saved KGSL idle timer, and removes module state and deployed Scene files. |
+| `uninstall.sh` | Stops the daemon, attempts to restore saved KGSL idle-timer and GPU bounds, and removes module state; if GPU restoration fails, it preserves the original GPU-bound record for manual recovery. |
 | `MW_CpuSpeedController` | Prebuilt native scheduler daemon. A pinned upstream source snapshot is included under `third_party/`; the exact build provenance of this binary should still be confirmed. |
 | `SUPPORTED_SOC.md` | Profile mapping, calibration behavior, capability-detection rules, and kernel-interface caveats. |
 | `TUNING_RESEARCH.md` | Controlled device A/B procedure, sampling guidance, and interpretation boundaries. |

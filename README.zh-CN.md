@@ -10,6 +10,7 @@ G_CTS 是面向 Android root 环境的 CPU 调度模块，基于 [MoWei 公开�
 - 安装时读取设备实际 CPUFreq policy、CPU 映射、可用 OPP 与 governor，校准 SoC 配置，并移除设备不存在的 policy 映射。
 - `fast` 把实际识别到的各 CPU policy 最高可读取频点作为频率上限，前台应用 `uclamp.min=100`；它开放最高上限，不代表持续强制最高频，也不锁最低频。
 - WebUI 显示设备信息、CPU policy 实时频率与上限，以及设备提供的电量、温度等数据。
+- 调校页按模式设置 KGSL GPU 最低/最高频率；仅当设备导出可读写上下限和可用 OPP 列表时开放，未设置时恢复接管前的设备值。
 - 按设备实时 sysfs 能力决定是否开放 I/O scheduler、队列调优、CPUIdle 和 Qualcomm DDR/LLCC 等选项；能力检测不等于驱动最终接受写入。
 - WebUI 与 Scene 都可切换模式；共享模式状态文件，便于显示当前档位。
 - KGSL GPU idle timer 是可选能力。若内核接受写入才会生效；节点存在或权限可写不代表内核一定支持修改。
@@ -31,10 +32,10 @@ G_CTS 是面向 Android root 环境的 CPU 调度模块，基于 [MoWei 公开�
 2. 安装器通过设备属性和硬件信息选择 `conf/*.ini` 配置。
 3. 安装器检查真实 CPUFreq policy、CPU 核心映射、OPP 和 governor；频率目标会按设备频点校准。
 4. 安装器探测块设备队列、CPUIdle、配置中引用的 devfreq 节点，以及 KGSL idle timer 等接口；不具备应用条件的设置会被关闭或标记为不可用。
-5. 重启后 `service.sh` 等待 Android 用户存储可用，部署 Scene 接口，按当前模式同步可选 GPU timer，再启动并持续看护预编译守护进程；异常退出时回退到 balance 并按退避间隔自动重试。
+5. 重启后 `service.sh` 等待 Android 用户存储可用，部署 Scene 接口，按当前模式同步可选 GPU timer，并持续看护预编译调度守护进程；异常退出时回退到 balance 并按退避间隔自动重试。
 6. 用户从 WebUI 或 Scene 选择四档之一；守护进程读取配置并应用其支持的 CPU/系统参数。
 
-请在更新前备份现有配置。不要同时运行多个会改写相同 CPUFreq、cpuset、I/O 或 GPU 节点的调度工具，除非明确了解冲突关系。
+请在更新前备份现有配置。不要同时运行多个会改写相同 CPUFreq、cpuset、I/O 或 GPU 节点的调度工具，除非明确了解冲突关系。“禁用 GPU Boost”与 GPU 频率上下限控制不能同时启用。
 
 ## WebUI 界面和交互逻辑
 
@@ -73,7 +74,7 @@ G_CTS 是面向 Android root 环境的 CPU 调度模块，基于 [MoWei 公开�
 | `[meta]` | `name` 为配置显示名称；`configVersion` 必须与预编译守护进程读取的 schema 兼容；`loglevel` 控制日志等级。 |
 | `[function]` | 全局功能开关，如 `EasScheduler`、`cpuset`、`LoadBalancing`、`AdjIOScheduler`、`LaunchBoost`、`AffintySetter`、`DisableQcomGpu`、`CpuIdleScaling_Governor`。参数存在不代表内核接口存在。 |
 | `[CoreFramework]` | `SmallCorePath`、`MediumCorePath`、`BigCorePath`、`SuperBigCorePath` 将逻辑簇映射到 kernel CPUFreq policy 编号。policy 编号不是固定 SoC 规格，安装时会检查实际目录。 |
-| `[powersave]` / `[balance]` / `[performance]` / `[fast]` | 每档的 governor、频率上下限、uclamp、governor 参数、UFS/网络选项及可选 GPU timer。 |
+| `[powersave]` / `[balance]` / `[performance]` / `[fast]` | 每档的 governor、CPU/GPU 频率上下限、uclamp、governor 参数、UFS/网络选项及可选 GPU timer。 |
 | `*CoreMaxFreq` | CPU policy 频率上限，单位 kHz。若能读到 OPP 列表，安装器将目标向下吸附至可用频点；极速档使用最高可读频点。 |
 | `*CoreMinFreq` | CPU policy 频率下限，单位 kHz；`0` 表示不设置下限。默认配置不锁最低频。 |
 | `UclampTopAppMin/Max`、`UclampForeGroundMin/Max`、`UclampBackGroundMin/Max` | 前台应用、前台组、后台组的 utilization clamp 边界，配置使用 0–100 数值。`UclampTopApplatency_sensitive` 是前台延迟敏感标志（0/1），具体支持由内核决定。 |
@@ -88,6 +89,7 @@ G_CTS 是面向 Android root 环境的 CPU 调度模块，基于 [MoWei 公开�
 | `[LaunchBoost] UclampTopAppBoostMin` | 启动加速期间前台应用的 uclamp 下限，0–100 配置刻度。 |
 | `ufsClkGate` / `NetWorkOpt` | 模式级 UFS 时钟门控和网络优化布尔值。具体节点与效果依赖守护进程和 OEM 内核。 |
 | `GpuIdleTimerMs` | KGSL `idle_timer` 目标值，单位 ms。`0` 请求恢复首次接管前保存值。写入后读回验证；驱动忽略或改写时以实际读回为准。 |
+| `GpuMinFreq` / `GpuMaxFreq` | 模式级 KGSL devfreq 最低/最高频率，单位 Hz；仅允许选择设备 `available_frequencies` 中的 OPP。`0` 表示该边界跟随首次接管前的设备值；两者都为 `0` 时恢复并释放控制。应用后按 sysfs 读回结果报告，卸载时尝试恢复原始上下限。 |
 
 **不要把一个机型的 policy 编号、devfreq 路径、governor 参数或 OPP 值直接套到另一台手机。** sysfs 节点可写仅代表具备尝试条件，不代表 SELinux、驱动或守护进程接受该值。
 
@@ -184,7 +186,7 @@ CPU 的动态功耗受电压、频率、活动因子、芯片漏电和任务耗�
 | 文件 | 用途 |
 |---|---|
 | `webroot/index.html` | WebUI 页面骨架、页面容器和脚本/样式入口。 |
-| `webroot/app.js` | 主交互：KernelSU shell bridge、真机探测协议、状态解析、模式切换、参数编辑、保存/恢复、诊断提示。 |
+| `webroot/app.js` | 主交互：KernelSU shell bridge、真机探测协议、模式切换、参数编辑、保存/恢复和诊断提示。 |
 | `webroot/styles.css` | 响应式 Material 3 主题、模式色、卡片、弹窗、按钮和触屏交互状态。 |
 | `webroot/soc-data.js` | UI 使用的 SoC 名称、簇拓扑和 policy 展示回退信息。 |
 | `webroot/demo.js` | 浏览器桌面预览的模拟接口和测试数据；不连接真机，不写设备。 |

@@ -28,6 +28,15 @@ ini_get() {   # ini_get 文件 段 键
 ini_set() {   # ini_set 文件 段 键 新值   (仅替换数值/单词，保留行尾 CRLF 与引号)
   sed -i "/^\[$2\]/,/^\[/ s/^\($3[[:space:]]*=[[:space:]]*\)[^[:cntrl:]]*/\1$4/" "$1"
 }
+ini_ensure_zero() {
+  file=$1 section=$2 key=$3
+  [ -n "$(ini_get "$file" "$section" "$key")" ] && return 0
+  tmp="${file}.tmp.$$"
+  awk -v sec="[$section]" -v line="$key = 0" '
+    { clean=$0; sub(/\r$/, "", clean); print }
+    clean == sec { print line }
+  ' "$file" > "$tmp" && mv -f "$tmp" "$file"
+}
 io_scheduler_options() { # 输出一个 I/O 队列支持的调度器列表，剥除当前项方括号
   for g in $(cat "$1" 2>/dev/null); do
     g=${g#\[}; g=${g%\]}
@@ -142,20 +151,17 @@ say "  型号     $cpu_name"
 say "  配置档   $cfgname  （按本机 policy 校准）"
 say "  以下频率单位为 GHz；档位值是允许上限，不代表 CPU 会持续运行在该频率。"
 
-# 备份旧配置
 say " "; say "▌ 部署配置"
 mkdir -p "$SD"
-if [ -f "$SD/config.ini" ]; then
-  ts=$(date +%Y%m%d-%H%M%S); cp -f "$SD/config.ini" "$SD/config.ini.bak.$ts"
-  say "  已备份原配置：$SD/config.ini.bak.$ts"
-  ls -t "$SD"/config.ini.bak.* 2>/dev/null | tail -n +4 | while read -r old; do rm -f "$old"; done
-  say "  仅保留最近 3 份安装备份；新配置不会覆盖旧备份。"
-else
-  say "  未发现旧配置，将为本机创建新配置。"
-fi
 rm -f "$SD/Performance.conf" "$SD/Performance.conf.bak"
 cp -f "$SRC" "$SD/config.ini"
 echo "$cfgname" > "$MODPATH/profile"
+for mode in $MODES; do
+  ini_ensure_zero "$SD/config.ini" "$mode" GpuMinFreq ||
+    abort "! 无法初始化 $mode GPU 最低频率配置"
+  ini_ensure_zero "$SD/config.ini" "$mode" GpuMaxFreq ||
+    abort "! 无法初始化 $mode GPU 最高频率配置"
+done
 say "  已复制 $cpu_name 的四档配置到 $SD/config.ini。"
 say "  后续会按本机 CPU policy 校验簇映射，并校准各档频率上限。"
 
@@ -240,11 +246,27 @@ elif [ -e "$gpu_node" ]; then
 else
   gpu_summary="KGSL idle_timer：不支持 · 不会写入"
 fi
+gpu_freq_dir=/sys/class/kgsl/kgsl-3d0/devfreq
+gpu_freq_count=0
+for f in $(cat "$gpu_freq_dir/available_frequencies" 2>/dev/null); do
+  case "$f" in ''|*[!0-9]*) continue ;; esac
+  gpu_freq_count=$((gpu_freq_count + 1))
+done
+if [ "$gpu_freq_count" -gt 1 ] &&
+   [ -r "$gpu_freq_dir/min_freq" ] && [ -w "$gpu_freq_dir/min_freq" ] &&
+   [ -r "$gpu_freq_dir/max_freq" ] && [ -w "$gpu_freq_dir/max_freq" ]; then
+  gpu_freq_summary="KGSL GPU 频率：$gpu_freq_count 个可用频点 · 上下限节点可读写"
+elif [ -e "$gpu_freq_dir/min_freq" ] || [ -e "$gpu_freq_dir/max_freq" ]; then
+  gpu_freq_summary="KGSL GPU 频率：接口/频点不完整 · 不提供调节"
+else
+  gpu_freq_summary="KGSL GPU 频率：不支持 · 保持驱动控制"
+fi
 say "  │ $io_summary"
 say "  │ $io_tune_summary"
 say "  │ $idle_summary"
 say "  │ $bus_summary"
 say "  │ $gpu_summary"
+say "  │ $gpu_freq_summary"
 say "  └────────────────────────────────┘"
 
 # 校验 CoreFramework：本机不存在的 policy 从配置中移除，避免「大核无频率」幽灵簇

@@ -1,6 +1,6 @@
 id=MW_CpuTurboScheduler
 name=G_CTS
-version=v6.1.13-Ghost
-versionCode=20261054
+version=v6.1.24-Ghost
+versionCode=20261065
 author=Ghost（基于 MoWei 二改）
-description=Android 8-16 四档 CPU 调度；设备级 OPP 校准、WebUI 与异常恢复。极速档不强制持续满频；保留厂商温控，不保证省电。
+description=Android 8-16 四档 CPU 调度；按设备能力校准并验证设置。保留厂商温控，不保证省电或帧率提升。

@@ -13,6 +13,7 @@ const SD = '/sdcard/Android/MW_CpuSpeedController';
 const P = {
   cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
   tune: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  game: '<path d="M6 9h12a4 4 0 0 1 3.8 5.2l-.8 2.6a2 2 0 0 1-3.3.8L15 15h-6l-2.7 2.6a2 2 0 0 1-3.3-.8l-.8-2.6A4 4 0 0 1 6 9z"/><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"/>',
   doc: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   leaf: '<path d="M5 19c0-9 5-14 14-14 0 9-5 14-14 14z"/><path d="M5 19 14 10"/>',
@@ -109,6 +110,7 @@ function sh(cmd, ms = 20000) {
   });
 }
 const b64 = s => btoa(unescape(encodeURIComponent(s)));
+const shQuote = s => `'${String(s).replace(/'/g, "'\\''")}'`;
 const real = {
   async info() {
     const r = await sh(`S=/sys/devices/system/cpu
@@ -189,6 +191,29 @@ elif [ -e "$GPU" ]; then
   else echo "GPU|unreadable|"
   fi
 else echo "GPU|unsupported|"
+fi
+GPU_DEV=/sys/class/kgsl/kgsl-3d0/devfreq
+GPU_FREQS=""
+GPU_FREQ_COUNT=0
+for f in $(cat "$GPU_DEV/available_frequencies" 2>/dev/null); do
+  case "$f" in ''|*[!0-9]*) continue ;; esac
+  GPU_FREQS="$GPU_FREQS $f"
+  GPU_FREQ_COUNT=$((GPU_FREQ_COUNT + 1))
+done
+GPU_MIN="$GPU_DEV/min_freq"
+GPU_MAX="$GPU_DEV/max_freq"
+GPU_CURRENT_VALUE=$(cat "$GPU_DEV/cur_freq" 2>/dev/null)
+GPU_MIN_VALUE=$(cat "$GPU_MIN" 2>/dev/null)
+GPU_MAX_VALUE=$(cat "$GPU_MAX" 2>/dev/null)
+case "$GPU_MIN_VALUE:$GPU_MAX_VALUE" in *[!0-9:]*|:*|*:) GPU_RANGE_VALID=0 ;; *) GPU_RANGE_VALID=1 ;; esac
+if [ "$GPU_FREQ_COUNT" -gt 1 ] && [ "$GPU_RANGE_VALID" = 1 ] &&
+   [ -r "$GPU_MIN" ] && [ -w "$GPU_MIN" ] &&
+   [ -r "$GPU_MAX" ] && [ -w "$GPU_MAX" ]; then
+  echo "GPUF|supported|$GPU_CURRENT_VALUE|$GPU_MIN_VALUE|$GPU_MAX_VALUE|\${GPU_FREQS# }"
+elif [ -e "$GPU_MIN" ] || [ -e "$GPU_MAX" ]; then
+  echo "GPUF|unavailable||||"
+else
+  echo "GPUF|unsupported||||"
 fi`);
     return r.stdout;
   },
@@ -211,12 +236,19 @@ echo "D|$(pidof MW_CpuSpeedController)"`, 8000);
     const lines = (r.stdout || '').trim().split('\n').filter(Boolean);
     const modeLine = lines.find(line => line.startsWith('MODE|'));
     const gpuLine = lines.find(line => line.startsWith('GPU|'));
+    const gpuFreqLine = lines.find(line => line.startsWith('GPUF|'));
     const fields = modeLine ? modeLine.split('|') : [];
     return {
       requested: r.errno === 0 && fields[1] === m && fields[2] === 'written',
       gpu: gpuLine ? gpuLine.slice(4) : '',
+      gpuFreq: gpuFreqLine ? gpuFreqLine.slice(5) : '',
       error: r.stderr || (r.errno ? `powercfg.sh exit ${r.errno}` : ''),
     };
+  },
+  async applyGpu() {
+    const r = await sh(`sh ${MOD}/vtools/powercfg.sh apply_gpu`);
+    const line = (r.stdout || '').split('\n').find(entry => entry.startsWith('GPUF|'));
+    return { result: line ? line.slice(5) : '', error: r.stderr || (r.errno ? `powercfg.sh exit ${r.errno}` : '') };
   },
   async readLog() { return (await sh(`tail -n 400 ${SD}/log.txt 2>/dev/null`)).stdout; },
   async clearLog() { return (await sh(`: > ${SD}/log.txt`)).errno === 0; },
@@ -272,7 +304,7 @@ class Ini {
 const S = {
   info: null, ini: null, mode: 'balance', running: false, demo: false, ready: false, error: null,
   page: 'home', tab: 'mode', edit: 'balance', live: null, busy: false, saving: false,
-  logs: null, logLv: 'ALL', logQ: '', open: { freq: true }, gpuApply: null,
+  logs: null, logLv: 'ALL', logQ: '', open: { freq: true }, gpuApply: null, gpuFreqApply: null,
   clusters: [], profile: '', soc: null,
 };
 
@@ -287,6 +319,7 @@ function parseInfo(t) {
     prop: {}, mod: {}, pol: {}, ios: [], idle: [],
     ioc: { queues: 0, scheduler: false, tuning: false, tuned: 0 },
     idleWritable: false, bus: { supported: false, nodes: 0 }, gpu: { status: 'unknown' },
+    gpuFreq: { status: 'unknown', current: 0, min: 0, max: 0, freqs: [] },
   };
   t.split('\n').forEach(ln => {
     const f = ln.replace(/\r/g, '').split('|');
@@ -303,6 +336,10 @@ function parseInfo(t) {
     }
     else if (f[0] === 'BUS') o.bus = { supported: f[1] === '1', nodes: +f[2] || 0 };
     else if (f[0] === 'GPU') o.gpu = { status: f[1] || 'unknown', detail: f[2] || '' };
+    else if (f[0] === 'GPUF') o.gpuFreq = {
+      status: f[1] || 'unknown', current: +f[2] || 0, min: +f[3] || 0, max: +f[4] || 0,
+      freqs: (f[5] || '').trim().split(/\s+/).filter(x => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b),
+    };
   });
   if (!o.ioc.scheduler) o.ios = [];
   if (!o.idleWritable) o.idle = [];
@@ -427,12 +464,14 @@ function fSlider({ s, k, label, sub, min, max, step = 1, unit = '', t = 'sl', c 
   const shown = stops ? fmtStop(stops[idx], kind, true) : (+val).toFixed(dec) + `<u>${unit}</u>`;
   const locked = s === 'fast' && kind === 'Max' && /CoreMaxFreq$/.test(k);
   return `<div class="fld${modCls(s, k)}"><div class="top"><div class="lbl">${label}${sub ? `<small>${sub}</small>` : ''}</div><div class="val" data-v>${shown}</div></div>
-    <button type="button" class="slider-display" aria-label="${esc(label)}${locked ? '，极速档自动最高频' : '，点击选择'}" ${locked ? 'disabled' : 'data-t="sliderpick"'} data-s="${s}" data-k="${k}" data-c="${c}" data-kind="${kind}" data-min="${min}" data-max="${max}" data-step="${step}" data-unit="${esc(unit)}" data-dec="${dec}">
+    <button type="button" class="slider-display" aria-label="${esc(label)}${locked ? '，极速档自动最高频' : '，点击选择'}" ${locked ? 'disabled' : 'data-t="sliderpick"'} data-s="${s}" data-k="${k}" data-c="${c}" data-kind="${kind}" data-stops="${stops ? stops.join(',') : ''}" data-min="${min}" data-max="${max}" data-step="${step}" data-unit="${esc(unit)}" data-dec="${dec}">
       <span class="slider" style="--p:${p}%"><span class="trk"><span class="fill"></span></span>${tk}<span class="thumb"></span></span>
     </button>
     <div class="legend"><span>${lo}</span><span>${hi}</span></div></div>`;
 }
-const fmtStop = (f, kind, html) => (kind === 'Min' && f === 0) ? '不限制' : (html ? `${fmtG(f)}<u>GHz</u>` : `${fmtG(f)} GHz`);
+const fmtStop = (f, kind, html) => kind === 'GPU'
+  ? (f === 0 ? '自动' : html ? `${(f / 1e9).toFixed(2)}<u>GHz</u>` : `${(f / 1e9).toFixed(2)} GHz`)
+  : (kind === 'Min' && f === 0) ? '不限制' : (html ? `${fmtG(f)}<u>GHz</u>` : `${fmtG(f)} GHz`);
 const stopsFor = (c, kind) => { const f = S.clusters[c].freqs; return kind === 'Min' ? [0, ...f] : f; };
 function fSelect(s, k, label, opts, sub) {
   const cur = S.ini.get(s, k);
@@ -456,6 +495,10 @@ async function openPicker(s, k, label, opts) {
   }
 }
 function sliderChoices(d) {
+  if (d.kind === 'GPU') return String(d.stops || '').split(',').filter(Boolean).map(Number).map(v => ({
+    value: String(v),
+    label: fmtStop(v, 'GPU', false),
+  }));
   if (d.kind) return stopsFor(+d.c, d.kind).map(v => ({
     value: String(v),
     label: d.kind === 'Min' && v === 0 ? '不限制' : `${fmtG(v)} GHz`,
@@ -591,6 +634,8 @@ async function setMode(id) {
   const [gpuStatus = '', gpuDetail = ''] = String(result.gpu || '').split('|', 2);
   S.gpuApply = gpuStatus ? { mode: id, status: gpuStatus, detail: gpuDetail } : null;
   if (gpuStatus === 'unsupported') S.info.gpu = { status: 'rejected', detail: gpuDetail };
+  const [gpuFreqStatus = '', ...gpuFreqDetail] = String(result.gpuFreq || '').split('|');
+  S.gpuFreqApply = gpuFreqStatus ? { mode: id, status: gpuFreqStatus, detail: gpuFreqDetail.join('|') } : null;
   // 立刻按配置刷新模式上限（不等待 sysfs）
   renderHome(); renderTune(); tickPaint();
   const checks = [250, 450, 700, 1000];
@@ -621,8 +666,9 @@ async function setMode(id) {
     cpuResult = `上限校验通过 ${measured.length}/${measured.length}${lower ? `（${lower} 簇受更低系统上限约束）` : ''}`;
   }
   const gpuResult = result.gpu ? `；GPU ${result.gpu.replace('|', '：')}` : '；GPU 状态未返回';
+  const gpuFreqResult = result.gpuFreq ? `；GPU 频率 ${result.gpuFreq.replace('|', '：')}` : '';
   const commandWarning = result.error ? `；提示 ${result.error}` : '';
-  toast(`${MID[id].name}：模式已写入；${cpuResult}${gpuResult}${commandWarning}`, { t: '撤销', fn: () => setMode(prev) });
+  toast(`${MID[id].name}：模式已写入；${cpuResult}${gpuResult}${gpuFreqResult}${commandWarning}`, { t: '撤销', fn: () => setMode(prev) });
 }
 
 /* ───────── 调校页 ───────── */
@@ -657,6 +703,24 @@ function modeTab() {
   const hasBusConfig = busKeys.every(k => I.has('Bus_dcvs', k)) && busKeys.some(k => I.has(m, k));
   const busFields = busKeys.filter(k => I.has(m, k)).map(k => [k, ({CPUllccmin:'LLCC 最低频率',CPUllccmax:'LLCC 最高频率',CPUddrmin:'DDR 最低频率',CPUddrmax:'DDR 最高频率'})[k]])
     .map(([k, label]) => fNum(m, k, label, 'Hz · 0=自动', 0, 10000000000)).join('');
+  const gpuFreq = S.info.gpuFreq || {};
+  const gpuFreqConfigured = I.has(m, 'GpuMinFreq') && I.has(m, 'GpuMaxFreq');
+  const gpuFreqStops = [...new Set([0, ...(gpuFreq.freqs || [])])];
+  const gpuFreqFields = gpuFreqConfigured && gpuFreq.status === 'supported' && gpuFreqStops.length > 1
+    ? fSlider({ s: m, k: 'GpuMinFreq', label: 'GPU 最低频率', sub: '0=自动 · 系统温控仍可进一步限频', kind: 'GPU', stops: gpuFreqStops }) +
+      fSlider({ s: m, k: 'GpuMaxFreq', label: 'GPU 最高频率', sub: '0=自动 · 仅限制上限，不锁定当前频率', kind: 'GPU', stops: gpuFreqStops })
+    : '';
+  const gpuFreqApply = S.gpuFreqApply?.mode === m ? S.gpuFreqApply : null;
+  const gpuFreqStatus = !gpuFreqConfigured
+    ? '当前配置未定义 GPU 频率项。'
+    : gpuFreq.status === 'supported' && gpuFreqStops.length > 1
+      ? `检测到 KGSL devfreq；当前 ${gpuFreq.current ? (gpuFreq.current / 1e9).toFixed(2) + ' GHz' : '未知'}，范围 ${gpuFreq.min ? (gpuFreq.min / 1e9).toFixed(2) + ' GHz' : '自动'}–${gpuFreq.max ? (gpuFreq.max / 1e9).toFixed(2) + ' GHz' : '自动'}。${gpuFreqApply ? ` 最近应用：${gpuFreqApply.status}${gpuFreqApply.detail ? ` · ${gpuFreqApply.detail}` : ''}` : '更改后保存并应用。'}`
+      : gpuFreq.status === 'unavailable'
+        ? '检测到 KGSL devfreq，但可用频点或可读写上下限接口不完整；不提供调节。'
+        : '本机未提供可验证的 KGSL GPU 频率上下限接口；不提供调节。';
+  const gpuFreqHint = `<p class="hint">${esc(gpuFreqStatus)}</p>`;
+  const gpuConflict = I.get('function', 'DisableQcomGpu') === 'true' &&
+    (Number(I.get(m, 'GpuMinFreq', 0)) > 0 || Number(I.get(m, 'GpuMaxFreq', 0)) > 0);
   return `<div class="chips">${chips}</div>
   ${m !== S.mode ? `<button class="btn tonal press" style="margin-bottom:12px" data-mode="${m}">设为当前模式</button>` : ''}
   ${card('freq', '频率上限', sum + ' GHz', (m === 'fast' ? '<p class="hint">极速档安装时按设备可读取的最高频点自动校准；信息不可读时保留配置值。</p>' : '') + freq)}
@@ -664,6 +728,8 @@ function modeTab() {
   ${card('uclamp', '负载约束 (uclamp)', usum,
     uc('前台应用', 'UclampTopAppMin', 'UclampTopAppMax') + fSwitch(m, 'UclampTopApplatency_sensitive', '前台应用延迟敏感', '优先低延迟唤醒，更跟手但更耗电', '1', '0') +
     uc('前台', 'UclampForeGroundMin', 'UclampForeGroundMax') + uc('后台', 'UclampBackGroundMin', 'UclampBackGroundMax'))}
+  ${card('gpu-freq', 'GPU 频率范围', gpuFreq.status === 'supported' ? '按设备可用 OPP 选择' : '设备能力检测', gpuFreqHint +
+    (gpuConflict ? '<p class="hint">当前已启用“禁用 GPU Boost”，与 GPU 频率上下限控制冲突；请先关闭该功能。</p>' : '') + gpuFreqFields)}
   ${(() => {
     const gpu = S.info.gpu || {};
     const configured = I.has(m, 'GpuIdleTimerMs');
@@ -775,6 +841,31 @@ async function save() {
   if (S.ini.get('Other', 'AdjQcomBus_dcvs') === 'true' && !S.info.bus.supported) {
     toast('Qualcomm DDR/LLCC devfreq 节点在本机不可用；请关闭该功能后再保存。'); return;
   }
+  const gpuFreq = S.info.gpuFreq || {};
+  for (const mode of MODES) {
+    const minKey = 'GpuMinFreq', maxKey = 'GpuMaxFreq';
+    if (!S.ini.has(mode.id, minKey) && !S.ini.has(mode.id, maxKey)) continue;
+    const minText = S.ini.get(mode.id, minKey, '0'), maxText = S.ini.get(mode.id, maxKey, '0');
+    if (!/^\d+$/.test(minText) || !/^\d+$/.test(maxText)) {
+      toast(`${mode.name} GPU 频率必须为非负整数 Hz。`); return;
+    }
+    const min = Number(minText), max = Number(maxText);
+    if ((min || max) && gpuFreq.status !== 'supported') {
+      toast('本机没有可验证且可写的 GPU 频率接口；不能保存非自动 GPU 频率。'); return;
+    }
+    if (gpuFreq.status === 'supported' &&
+        ((min && !gpuFreq.freqs.includes(min)) || (max && !gpuFreq.freqs.includes(max)))) {
+      toast(`${mode.name} GPU 频率不在设备可用 OPP 列表中，请重新选择。`); return;
+    }
+    if (min && max && min > max) {
+      toast(`${mode.name} GPU 最低频率不能高于最高频率。`); return;
+    }
+    if (S.ini.get('function', 'DisableQcomGpu') === 'true' && (min || max)) {
+      toast('“禁用 GPU Boost”与 GPU 频率上下限控制互相冲突；请关闭 GPU Boost 开关或将 GPU 频率设为自动。'); return;
+    }
+  }
+  const gpuFreqChanged = S.ini.changes().some(change =>
+    change.key === 'GpuMinFreq' || change.key === 'GpuMaxFreq');
   S.saving = true; renderDirty();
   try {
     const text = S.ini.toString();
@@ -784,10 +875,24 @@ async function save() {
     let restartResult;
     try { restartResult = await api.restart(); }
     catch (e) { restartResult = { running: false, error: String(e) }; }
+    let gpuFreqResult = '';
+    if (gpuFreqChanged) {
+      try {
+        const applied = await api.applyGpu();
+        gpuFreqResult = applied.result;
+        const [status = '', ...detail] = String(applied.result || '').split('|');
+        S.gpuFreqApply = status ? { mode: S.mode, status, detail: detail.join('|') } :
+          { mode: S.mode, status: 'failed', detail: applied.error || '没有收到应用结果' };
+      } catch (e) {
+        gpuFreqResult = `failed|${String(e)}`;
+        S.gpuFreqApply = { mode: S.mode, status: 'failed', detail: String(e) };
+      }
+    }
     S.running = restartResult.running;
     paintConn(); renderDirty(); rerenderAll();
-    toast(restartResult.running ? '已保存并应用' :
-      `已保存，但守护进程重启失败${restartResult.error ? `：${restartResult.error}` : ''}`);
+    const gpuMessage = gpuFreqChanged ? `；GPU 频率 ${gpuFreqResult ? gpuFreqResult.replace('|', '：') : '应用结果未知'}` : '';
+    toast((restartResult.running ? '已保存并应用' :
+      `已保存，但守护进程重启失败${restartResult.error ? `：${restartResult.error}` : ''}`) + gpuMessage);
     setTimeout(pollLive, 600);
     setTimeout(pollLive, 1500);
   } catch (e) {
@@ -859,7 +964,6 @@ function renderSet() {
     <div class="kv"><span>作者</span><span>Ghost（基于 MoWei 二改）</span></div>
     <p class="hint" style="margin:8px 0 0">本模块不再内置控制端 App。可在 Scene 中直接切换模式（通过 /data/powercfg.sh 联动），也可使用本页面。</p></section>`;
 }
-
 /* ───────── 导航与分发 ───────── */
 const NAV = [['home', '调度', 'cpu'], ['tune', '调校', 'tune'], ['log', '日志', 'doc'], ['set', '设置', 'gear']];
 function renderNav() {
@@ -963,7 +1067,7 @@ addEventListener('beforeunload', e => { if (dirtyN()) { e.preventDefault(); e.re
 const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.append(s); });
 async function boot() {
   S.ready = false; S.error = null; applyTheme(); renderNav(); renderHome();
-  if (!window.ksu) { S.demo = true; try { await loadScript('demo.js'); api = window.__demoApi; } catch {} }
+  if (!window.ksu) { S.demo = true; try { await loadScript('demo.js?v=20261065'); api = window.__demoApi; } catch {} }
   try {
     S.info = parseInfo(await api.info());
     if (!Object.keys(S.info.pol).length) throw Object.assign(new Error('pol'), { d: '读取不到 CPU 频率信息，请确认已授予 root 权限。' });

@@ -21,6 +21,103 @@ mkdir -p "$SD"
 SUPERVISOR_PID="$$"
 printf '%s\n' "$SUPERVISOR_PID" > "$SD/service.pid"
 DPID=
+restore_legacy_app_affinity() {
+  records=/data/local/tmp/gcts-app-affinity.records
+  boot_id="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+  legacy_pid="$(cat /data/local/tmp/gcts-app-affinity.pid 2>/dev/null)"
+  case "$legacy_pid" in
+    ''|*[!0-9]*) ;;
+    *)
+      legacy_cmd=
+      [ -r "/proc/$legacy_pid/cmdline" ] &&
+        legacy_cmd="$(tr '\000' ' ' < "/proc/$legacy_pid/cmdline" 2>/dev/null)"
+      case "$legacy_cmd" in
+        *app-affinity.sh*watch*)
+          kill "$legacy_pid" 2>/dev/null
+          tries=0
+          while kill -0 "$legacy_pid" 2>/dev/null && [ "$tries" -lt 20 ]; do
+            sleep 0.1
+            tries=$((tries + 1))
+          done
+          if kill -0 "$legacy_pid" 2>/dev/null; then
+            kill -9 "$legacy_pid" 2>/dev/null
+            log_service "旧线程亲和性服务未响应退出信号，已强制停止"
+          fi
+          ;;
+      esac
+      ;;
+  esac
+  if [ -r "$records" ] && [ -n "$boot_id" ]; then
+    while IFS='|' read -r pid tid start original state saved_boot; do
+      case "$pid:$tid:$start" in
+        *[!0-9:]*|'') continue ;;
+      esac
+      [ "$saved_boot" = "$boot_id" ] || continue
+      case "$original" in
+        ''|*[!0-9,-]*) continue ;;
+      esac
+      stat="/proc/$pid/task/$tid/stat"
+      [ -r "$stat" ] || continue
+      current="$(sed 's/^.*) //' "$stat" | awk '{print $20}')"
+      [ "$current" = "$start" ] || continue
+      taskset -pc "$original" "$tid" >/dev/null 2>&1 ||
+        log_service "移除旧线程亲和性规则时恢复 TID $tid 失败"
+    done < "$records"
+  fi
+  rm -f "$records" /data/local/tmp/gcts-app-affinity.pid \
+    /data/local/tmp/gcts-app-affinity.status
+  rm -f "$SD/app-affinity.conf" "$SD/app-affinity.discovered" \
+    "$SD/app-affinity.log"
+}
+restore_legacy_app_affinity
+remove_legacy_game_thread() {
+  records=/data/local/tmp/gcts-game-thread.records
+  boot_id="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+  game_pid="$(cat /data/local/tmp/gcts-game-thread.pid 2>/dev/null)"
+  case "$game_pid" in
+    ''|*[!0-9]*) ;;
+    *)
+      game_cmd=
+      [ -r "/proc/$game_pid/cmdline" ] &&
+        game_cmd="$(tr '\000' ' ' < "/proc/$game_pid/cmdline" 2>/dev/null)"
+      case "$game_cmd" in
+        *game-thread.sh*watch*)
+          kill "$game_pid" 2>/dev/null
+          tries=0
+          while kill -0 "$game_pid" 2>/dev/null && [ "$tries" -lt 20 ]; do
+            sleep 0.1
+            tries=$((tries + 1))
+          done
+          if kill -0 "$game_pid" 2>/dev/null; then
+            kill -9 "$game_pid" 2>/dev/null
+            log_service "旧游戏线程服务未响应退出信号，已强制停止"
+          fi
+          ;;
+      esac
+      ;;
+  esac
+  if [ -r "$records" ] && [ -n "$boot_id" ]; then
+    while IFS='|' read -r pid tid start original saved_boot state group applied; do
+      case "$pid:$tid:$start" in
+        *[!0-9:]*|'') continue ;;
+      esac
+      [ "$saved_boot" = "$boot_id" ] || continue
+      case "$original" in
+        ''|*[!0-9,-]*) continue ;;
+      esac
+      stat="/proc/$pid/task/$tid/stat"
+      [ -r "$stat" ] || continue
+      current="$(sed 's/^.*) //' "$stat" | awk '{print $20}')"
+      [ "$current" = "$start" ] || continue
+      taskset -pc "$original" "$tid" >/dev/null 2>&1 ||
+        log_service "移除旧游戏线程亲和性规则时恢复 TID $tid 失败"
+    done < "$records"
+  fi
+  rm -f "$records" /data/local/tmp/gcts-game-thread.pid \
+    /data/local/tmp/gcts-game-thread.status
+  rm -f "$SD/game-thread.enabled" "$SD/game-thread.rules" "$SD/game-thread.log"
+}
+remove_legacy_game_thread
 cleanup_service() {
   if [ -n "$DPID" ]; then
     kill "$DPID" 2>/dev/null

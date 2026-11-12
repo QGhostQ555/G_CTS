@@ -28,7 +28,7 @@ G_CTS 是面向 Android root 环境的 CPU 调度模块，基于 [MoWei 公开�
 
 ## 安装和运行流程
 
-1. 在支持的 root 模块管理器中刷入安装 ZIP。该 ZIP 是 root 模块包，不是普通 APK。
+1. 在支持的 root 模块管理器中刷入安装 ZIP。该 ZIP 是 root 模块包，不是普通 APK。若管理器提示无法执行安装脚本，请从项目 Releases 下载最新修复版；安装包中的 recovery 入口和模块 shell 脚本都需要保留可执行权限。
 2. 安装器通过设备属性和硬件信息选择 `conf/*.ini` 配置。
 3. 安装器检查真实 CPUFreq policy、CPU 核心映射、OPP 和 governor；频率目标会按设备频点校准。
 4. 安装器探测块设备队列、CPUIdle、配置中引用的 devfreq 节点，以及 KGSL idle timer 等接口；不具备应用条件的设置会被关闭或标记为不可用。

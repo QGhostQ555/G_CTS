@@ -389,8 +389,12 @@ say "  已部署 /data/powercfg.sh 与 powercfg.json，Scene 可直接切换四�
 sh "$MODPATH/vtools/desc.sh" "$MODPATH/module.prop" 2>/dev/null
 
 rm -rf "$MODPATH/conf"
-command -v set_perm_recursive >/dev/null 2>&1 && set_perm_recursive "$MODPATH" 0 0 0755 0644 && \
-  chmod 0755 "$MODPATH"/*.sh "$MODPATH"/vtools/*.sh "$MODPATH/MW_CpuSpeedController"
+if command -v set_perm_recursive >/dev/null 2>&1; then
+  set_perm_recursive "$MODPATH" 0 0 0755 0644 ||
+    say "警告：递归权限设置失败，继续显式设置模块脚本权限"
+fi
+chmod 0755 "$MODPATH"/*.sh "$MODPATH"/vtools/*.sh "$MODPATH/MW_CpuSpeedController" ||
+  abort "! 无法设置模块脚本与守护进程的执行权限"
 
 say " "; hr
 say "安装完成：SoC 配置、CPU policy、OPP 与调速器检查已结束。"

@@ -133,6 +133,17 @@ gpu_idle() {
 gpu_freq_has_opp() {
   case " $GPU_FREQS " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
+gpu_freq_wait_readback() {
+  wait_node=$1
+  wait_value=$2
+  wait_tries=0
+  while [ "$wait_tries" -lt 20 ]; do
+    [ "$(cat "$wait_node" 2>/dev/null)" = "$wait_value" ] && return 0
+    sleep 0.05
+    wait_tries=$((wait_tries + 1))
+  done
+  return 1
+}
 gpu_freq_write_pair_raw() {
   target_min=$1
   target_max=$2
@@ -152,9 +163,9 @@ gpu_freq_write_pair_raw() {
     second_node=$GPU_FREQ_MIN; second_value=$target_min
   fi
   printf '%s\n' "$first_value" > "$first_node" 2>/dev/null || return 1
-  [ "$(cat "$first_node" 2>/dev/null)" = "$first_value" ] || return 1
+  gpu_freq_wait_readback "$first_node" "$first_value" || return 1
   printf '%s\n' "$second_value" > "$second_node" 2>/dev/null || return 1
-  [ "$(cat "$second_node" 2>/dev/null)" = "$second_value" ]
+  gpu_freq_wait_readback "$second_node" "$second_value"
 }
 gpu_freq_restore() {
   GPU_FREQ_DIR=/sys/class/kgsl/kgsl-3d0/devfreq

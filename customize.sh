@@ -8,9 +8,12 @@ CPUDIR=/sys/devices/system/cpu
 SUPPORTED_LIST="SDM660 SDM750G SDM765G SDM7G2+ SDM7G3+ SDM7sG2 SDM855 SDM865 SDM870 SDM888 SDM8Elite SDM8G1 SDM8G1+ SDM8G2 SDM8G3 MTK720 MTK1080 MTKG99 MTK1100 MTK1200 MTK8100 MTK8200 MTK8300 MTK8300Ultra MTK8400Ultra MTK9000 MTK9200+ MTK9300+ MTK9400+"
 MODES="powersave balance performance fast"
 
-command -v ui_print >/dev/null 2>&1 || ui_print() { echo "$1"; }
+if ! command -v ui_print >/dev/null 2>&1; then
+  ui_print() { echo "$1"; }
+fi
 say() { ui_print "$1"; }
 
+say "G_CTS 安装脚本开始执行"
 
 hr()  { say "──────────────────────────────"; }
 
@@ -389,10 +392,6 @@ say "  已部署 /data/powercfg.sh 与 powercfg.json，Scene 可直接切换四�
 sh "$MODPATH/vtools/desc.sh" "$MODPATH/module.prop" 2>/dev/null
 
 rm -rf "$MODPATH/conf"
-if command -v set_perm_recursive >/dev/null 2>&1; then
-  set_perm_recursive "$MODPATH" 0 0 0755 0644 ||
-    say "警告：递归权限设置失败，继续显式设置模块脚本权限"
-fi
 chmod 0755 "$MODPATH"/*.sh "$MODPATH"/vtools/*.sh "$MODPATH/MW_CpuSpeedController" ||
   abort "! 无法设置模块脚本与守护进程的执行权限"
 
